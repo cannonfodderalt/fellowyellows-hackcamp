@@ -1,27 +1,33 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { forwardRef, useEffect } from "react";
 
-export default function Webcam({ onFrame }: { onFrame: (video: HTMLVideoElement) => void }) {
-  const videoRef = useRef<HTMLVideoElement>(null);
+type Props = {};
 
+const Webcam = forwardRef<HTMLVideoElement, Props>((props, ref) => {
   useEffect(() => {
-    async function setup() {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true });
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-        await videoRef.current.play();
-        onFrame(videoRef.current);
+    const video = ref as React.RefObject<HTMLVideoElement | null>;
+    if (!video.current) return;
+
+    async function init() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: true,
+          audio: false,
+        });
+        video.current!.srcObject = stream;
+        await video.current!.play();
+      } catch (err) {
+        console.error("Error accessing webcam:", err);
       }
     }
-    setup();
-  }, []);
 
-  return (
-    <video
-      ref={videoRef}
-      style={{ width: "100%", transform: "scaleX(-1)" }}
-      playsInline
-    />
-  );
-}
+    init();
+  }, [ref]);
+
+  return <video ref={ref} autoPlay playsInline muted width={640} height={480} />;
+});
+
+Webcam.displayName = "Webcam";
+
+export default Webcam;

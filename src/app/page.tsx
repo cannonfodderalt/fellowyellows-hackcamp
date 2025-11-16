@@ -3,41 +3,97 @@
 import { useEffect, useRef, useState } from "react";
 import Webcam from "@/components/Webcam/Webcam";
 import { getHandLandmarker } from "@/lib/mediapipe/hand";
-import { classifyGesture } from "@/lib/gestures/classify";
+import { classifyGesture, Gesture } from "@/lib/gestures/classify";
 
 export default function GesturePage() {
-  const [gesture, setGesture] = useState("none");
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const [gesture, setGesture] = useState<Gesture>("none");
 
   useEffect(() => {
     let running = true;
+    let handLandmarker: any;
 
-    async function loop() {
-      const hand = await getHandLandmarker();
+    async function init() {
+      handLandmarker = await getHandLandmarker();
+      console.log("Hand Landmarker initialized:", handLandmarker);
 
-      function processFrame() {
-        if (!running || !videoRef.current) return;
+      // Wait until the video is ready
+      const waitForVideo = () =>
+        new Promise<HTMLVideoElement>((resolve) => {
+          const interval = setInterval(() => {
+            if (videoRef.current && videoRef.current.readyState >= 4) {
+              clearInterval(interval);
+              resolve(videoRef.current);
+            }
+          }, 100);
+        });
 
-        const res = hand.detectForVideo(videoRef.current, performance.now());
-        const landmarks = res.landmarks?.[0];
+      const video = await waitForVideo();
+      console.log("Video ready:", video);
 
-        const g = classifyGesture(landmarks);
-        setGesture(g);
+      function drawLandmarks(landmarks: any[]) {
+        if (!canvasRef.current) return;
+        const ctx = canvasRef.current.getContext("2d");
+        if (!ctx) return;
 
-        requestAnimationFrame(processFrame);
+        const width = video.videoWidth;
+        const height = video.videoHeight;
+        canvasRef.current.width = width;
+        canvasRef.current.height = height;
+
+        ctx.clearRect(0, 0, width, height);
+
+        ctx.fillStyle = "red";
+        landmarks.forEach((lm) => {
+          ctx.beginPath();
+          ctx.arc(lm.x * width, lm.y * height, 5, 0, 2 * Math.PI);
+          ctx.fill();
+        });
+
+        ctx.font = "24px Arial";
+        ctx.fillStyle = "yellow";
+        ctx.fillText(gesture, 10, 30);
       }
 
-      processFrame();
+      async function loop() {
+        if (!running || !videoRef.current) return;
+
+        const res = handLandmarker.detectForVideo(videoRef.current, performance.now());
+        const landmarks = res.landmarks?.[0];
+
+        if (landmarks) {
+          const g = classifyGesture(landmarks);
+          setGesture(g);
+          drawLandmarks(landmarks);
+        }
+
+        requestAnimationFrame(loop);
+      }
+
+      loop();
     }
 
-    loop();
-    return () => { running = false };
+    init();
+
+    return () => {
+      running = false;
+    };
   }, []);
 
   return (
-    <div>
-      <h1>Gesture: {gesture}</h1>
-      <Webcam onFrame={vid => (videoRef.current = vid)} />
+    <div style={{ position: "relative", width: "640px", height: "480px" }}>
+      <Webcam ref={videoRef} />
+      <canvas
+        ref={canvasRef}
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          pointerEvents: "none",
+        }}
+      />
+      <h1>Detected Gesture: {gesture}</h1>
     </div>
   );
 }
